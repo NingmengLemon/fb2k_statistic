@@ -33,6 +33,7 @@ class PlayerState:
     duration: float
     metadata: dict[str, str] | None
     time: float
+    volume_percent: float
 
 
 class StatisticCollector:
@@ -57,7 +58,7 @@ class StatisticCollector:
         self._is_collecting = False
         self._last_state: PlayerState | None = None
 
-    # pylint: disable=W1203
+    # pylint: disable=W1202, W1203
     def _compare_and_record(self, old: PlayerState | None, new: PlayerState | None):
         # None 表示断连状态
         # TODO: 变更状态时的数据库操作
@@ -89,7 +90,13 @@ class StatisticCollector:
                 case ("playing", "paused"):
                     logger.info("pause")
                 case ("playing", "playing"):
-                    logger.info(f"position {old.position} -> {new.position}")
+                    if old.volume_percent == new.volume_percent:
+                        logger.info(f"position {old.position} -> {new.position}")
+                    else:
+                        logger.info(
+                            f"volume {old.volume_percent}% -> {new.volume_percent}%"
+                        )
+
         else:
             logger.info(
                 f"switch {old.metadata["%title%"]} -> {new.metadata["%title%"]}"
@@ -101,31 +108,49 @@ class StatisticCollector:
         self._last_state = copy.deepcopy(new_state)
 
     def _player_to_state(self, player: PlayerStateInfo):
-        """将实质是 dict 的 PlayerStateInfo 简化为实质是 dataclass 的 PlayerState"""
+        """
+        将实质是 dict 的 PlayerStateInfo 简化为实质是 dataclass 的 PlayerState
+
+        同时进行一些必要的标准化处理
+        """
         columns = player["activeItem"]["columns"]
         if len(columns) == len(self._query_columns):
-            metadata = {k: v for k, v in zip(self._query_columns, columns)}
-            raw_artists = metadata.get("%artist%", "")
-            if raw_artists == "?":
-                artists = []
-            else:
+            metadata = {
+                k: (None if v == "?" else v)
+                for k, v in zip(self._query_columns, columns)
+            }
+            raw_artists = metadata.get("%artist%", None)
+            if raw_artists:
                 artists = handle_artist_field(
                     raw_artists,
                     self._config.fb2k_artist_delimiters,
                     self._config.preserved_artists,
                 )
-            logger.debug("extract artists: %s", artists)
+            else:
+                artists = []
             metadata["%artist%"] = self._config.database_artist_delimiter.join(artists)
+            logger.debug("extract metadata: %s", metadata)
         else:
             # 长度不匹配说明现在是停止状态，没有元数据
             metadata = None
+            logger.debug("stopped state, no metadata")
 
+        volume = player["volume"]
         return PlayerState(
             playback_state=player["playbackState"],
             position=player["activeItem"]["position"],
             duration=player["activeItem"]["duration"],
             metadata=metadata,
             time=time.time(),
+            volume_percent=(
+                0.0
+                if volume["isMuted"]
+                else (
+                    (volume["value"] - volume["min"])
+                    / (volume["max"] - volume["min"])
+                    * 100
+                )
+            ),
         )
 
     async def collect_forever(self):
@@ -145,7 +170,6 @@ class StatisticCollector:
                         )
                         self._switch_state(self._player_to_state(player))
                 except aiohttp.ClientConnectionError as e:
-                    # TODO: 对连接错误做特殊处理，超时什么的
                     logger.warning("Exception when collecting: %s", e)
                 self._switch_state(None)
                 logger.info(f"retry after {self._config.retry_interval}s")

@@ -12,8 +12,8 @@ class StatisticConfig(BaseModel):
     password: str | None = None
     # 数据库位置
     database_url: str = "sqlite:///~/fb2k_playback_statistic.db"
-    # 用作计算音乐哈希的字段
-    columns_as_id: list[str] = [r"%title%", r"%artist%"]
+    # 用作计算音乐哈希的字段们，顺序敏感
+    columns_as_id: list[str] = [r"%title%", r"%artist%", r"album"]
     # 将这些艺术家视为整体，保证不被分割符切割
     preserved_artists: list[str] = ["Leo/need"]
     # 允许的元数据中的分割符

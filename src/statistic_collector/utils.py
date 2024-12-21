@@ -81,5 +81,5 @@ def split_with_exclusions(
 
 def calc_music_id(metadata: dict[str, str], *fields: str):
     return hashlib.sha256(
-        ("-".join(str(metadata[f]) for f in fields)).encode("utf-8")
+        ("-".join(str(metadata.get(f)) for f in fields)).encode("utf-8")
     ).hexdigest()
