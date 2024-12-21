@@ -22,6 +22,8 @@ class StatisticConfig(BaseModel):
     database_artist_delimiter: str = "|"
     # 当播放进度超过多少时才会记录播放
     record_threshold: float = Field(0.75, ge=0.0, le=1.0)
+    # 重试间隔
+    retry_interval: float = Field(2.0, ge=0.0)
 
 
 class MusicItem(SQLModel, table=True):

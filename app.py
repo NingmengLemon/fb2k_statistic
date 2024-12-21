@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-from src.statistic_collector import BeefwebClient, StatisticCollector, StatisticConfig
+from src.statistic_collector import StatisticCollector, StatisticConfig
 
 
 async def main():

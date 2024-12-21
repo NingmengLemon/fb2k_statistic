@@ -1,19 +1,15 @@
+import asyncio
 import copy
 from dataclasses import dataclass
 import json
 import logging
 import time
 
+import aiohttp
 from sqlmodel import create_engine, SQLModel
 
 from .beefweb import BeefwebClient
-from .beefweb.models import (
-    PlaybackState,
-    PlayerActiveItemInfo,
-    PlayerStateInfo,
-    QueryResponse,
-    GetPlayerResponse,
-)
+from .beefweb.models import PlaybackState, PlayerStateInfo
 from .models import StatisticConfig, MusicItem, PlaybackRecord
 from .utils import calc_music_id, handle_artist_field
 
@@ -63,14 +59,25 @@ class StatisticCollector:
 
     # pylint: disable=W1203
     def _compare_and_record(self, old: PlayerState | None, new: PlayerState | None):
+        # None 表示断连状态
         # TODO: 变更状态时的数据库操作
         # 先不对数据库做操作，打印试试看
         match (old, new):
+            case (None, None):
+                return
             case (None, _):
                 logger.info("connect")
                 return
             case (_, None):
                 logger.info("disconnect")
+                return
+            case (x, y) if x.metadata is None and y.metadata is None:
+                return
+            case (_, y) if y.metadata is None:
+                logger.info("stop")
+                return
+            case (x, _) if x.metadata is None:
+                logger.info(f"start {new.metadata["%title%"]}")
                 return
 
         old_id = calc_music_id(old.metadata, *self._columns_as_id)
@@ -94,23 +101,24 @@ class StatisticCollector:
         self._last_state = copy.deepcopy(new_state)
 
     def _player_to_state(self, player: PlayerStateInfo):
+        """将实质是 dict 的 PlayerStateInfo 简化为实质是 dataclass 的 PlayerState"""
         columns = player["activeItem"]["columns"]
         if len(columns) == len(self._query_columns):
             metadata = {k: v for k, v in zip(self._query_columns, columns)}
+            raw_artists = metadata.get("%artist%", "")
+            if raw_artists == "?":
+                artists = []
+            else:
+                artists = handle_artist_field(
+                    raw_artists,
+                    self._config.fb2k_artist_delimiters,
+                    self._config.preserved_artists,
+                )
+            logger.debug("extract artists: %s", artists)
+            metadata["%artist%"] = self._config.database_artist_delimiter.join(artists)
         else:
+            # 长度不匹配说明现在是停止状态，没有元数据
             metadata = None
-
-        raw_artists = metadata.get("%artist%", "")
-        if raw_artists == "?":
-            artists = []
-        else:
-            artists = handle_artist_field(
-                raw_artists,
-                self._config.fb2k_artist_delimiters,
-                self._config.preserved_artists,
-            )
-        logger.debug("extract artists: %s", artists)
-        metadata["%artist%"] = self._config.database_artist_delimiter.join(artists)
 
         return PlayerState(
             playback_state=player["playbackState"],
@@ -136,10 +144,12 @@ class StatisticCollector:
                             "receive sse: %s", json.dumps(player, ensure_ascii=False)
                         )
                         self._switch_state(self._player_to_state(player))
-                except Exception as e:
+                except aiohttp.ClientConnectionError as e:
                     # TODO: 对连接错误做特殊处理，超时什么的
                     logger.warning("Exception when collecting: %s", e)
-                    self._switch_state(None)
+                self._switch_state(None)
+                logger.info(f"retry after {self._config.retry_interval}s")
+                await asyncio.sleep(self._config.retry_interval)
         finally:
             await self.close()
 
