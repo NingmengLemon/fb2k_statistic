@@ -1,5 +1,4 @@
 import asyncio
-import copy
 from dataclasses import dataclass
 import json
 import logging
@@ -11,7 +10,7 @@ from sqlmodel import create_engine, SQLModel
 from .beefweb import BeefwebClient
 from .beefweb.models import PlaybackState, PlayerStateInfo
 from .models import StatisticConfig, MusicItem, PlaybackRecord
-from .utils import calc_music_id, handle_artist_field
+from .utils import calc_music_id, handle_artist_field, lock
 
 _TABLES_TO_CREATE = [
     SQLModel.metadata.tables[t.__tablename__] for t in (MusicItem, PlaybackRecord)
@@ -55,22 +54,35 @@ class StatisticCollector:
             if field not in self._query_columns:
                 self._query_columns.append(field)
 
-        self._is_collecting = False
         self._last_state: PlayerState | None = None
+        # 用于当前曲目的状态缓冲，切歌/停止/断连时整理写入到数据库并清空
+        self._buffer = []  # 数据结构还没想好
+
+    def _write_record(self):
+        """写入数据库清空缓冲区的函数
+
+        大致想法：
+        当前时间和缓冲区末尾状态的时间做差得到实际时间
+        然后进度条位置也做个差？
+        超过记录阈值就录入，播放时间和实际时间差太多的按实际时间计
+        或许需要遍历，不能简单首尾做差ww
+        """
+        # TODO: 变更状态时的状态整理和数据库操作
+        raise NotImplementedError()
 
     # pylint: disable=W1202, W1203
-    def _compare_and_record(self, old: PlayerState | None, new: PlayerState | None):
+    def _compare(self, old: PlayerState | None, new: PlayerState | None):
         # None 表示断连状态
-        # TODO: 变更状态时的数据库操作
-        # 先不对数据库做操作，打印试试看
+        # 总之先打印试试看
+        # 总之往缓冲区里狠狠鸿儒(bs)
         match (old, new):
             case (None, None):
                 return
             case (None, _):
-                logger.info("connect")
+                logger.info("connected")
                 return
             case (_, None):
-                logger.info("disconnect")
+                logger.info("disconnected")
                 return
             case (x, y) if x.metadata is None and y.metadata is None:
                 return
@@ -78,7 +90,7 @@ class StatisticCollector:
                 logger.info("stop")
                 return
             case (x, _) if x.metadata is None:
-                logger.info(f"start {new.metadata["%title%"]}")
+                logger.info(f"start {new.metadata["%title%"]!r}")
                 return
 
         old_id = calc_music_id(old.metadata, *self._columns_as_id)
@@ -91,21 +103,23 @@ class StatisticCollector:
                     logger.info("pause")
                 case ("playing", "playing"):
                     if old.volume_percent == new.volume_percent:
-                        logger.info(f"position {old.position} -> {new.position}")
+                        logger.info(
+                            f"position {old.position:.4f} -> {new.position:.4f}"
+                        )
                     else:
                         logger.info(
-                            f"volume {old.volume_percent}% -> {new.volume_percent}%"
+                            f"volume {old.volume_percent:.2f}% -> {new.volume_percent:.2f}%"
                         )
 
         else:
             logger.info(
-                f"switch {old.metadata["%title%"]} -> {new.metadata["%title%"]}"
+                f"switch {old.metadata["%title%"]!r} -> {new.metadata["%title%"]!r}"
             )
 
     def _switch_state(self, new_state: PlayerState | None):
         """传入None时表示连接断开"""
-        self._compare_and_record(self._last_state, new_state)
-        self._last_state = copy.deepcopy(new_state)
+        self._compare(self._last_state, new_state)
+        self._last_state = new_state
 
     def _player_to_state(self, player: PlayerStateInfo):
         """
@@ -153,8 +167,8 @@ class StatisticCollector:
             ),
         )
 
+    @lock()
     async def collect_forever(self):
-        self._is_collecting = True
         try:
             while True:
                 try:

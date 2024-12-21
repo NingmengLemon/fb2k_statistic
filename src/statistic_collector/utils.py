@@ -1,5 +1,42 @@
+from collections.abc import Callable
+import functools
 import re
 import hashlib
+import asyncio
+from typing import TypeVar, ParamSpec, Protocol
+from collections.abc import Awaitable
+
+
+###### From Meloland/melobot by @aicorein, modified ######
+#: 泛型 T，无约束
+T = TypeVar("T")
+#: 泛型 T_co，协变无约束
+T_co = TypeVar("T_co", covariant=True)
+#: :obj:`~typing.ParamSpec` 泛型 P，无约束
+P = ParamSpec("P")
+
+
+class AsyncCallable(Protocol[P, T_co]):
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Awaitable[T_co]: ...
+
+
+def lock() -> Callable[[AsyncCallable[P, T]], AsyncCallable[P, T]]:
+    """锁装饰器"""
+    alock = asyncio.Lock()
+
+    def deco_func(func: AsyncCallable[P, T]) -> AsyncCallable[P, T]:
+
+        @functools.wraps(func)
+        async def wrapped_func(*args: P.args, **kwargs: P.kwargs) -> T:
+            async with alock:
+                return await func(*args, **kwargs)
+
+        return wrapped_func
+
+    return deco_func
+
+
+##### melobot end ######
 
 
 def handle_artist_field(
