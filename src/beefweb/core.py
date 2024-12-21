@@ -1,11 +1,17 @@
-import json
+from collections.abc import Mapping
 from typing import Unpack
 
 from yarl import URL
 import aiohttp
 from .asyncsse import parse_sse_message
 
-from .models import QueryBody
+from .models import (
+    GetPlayerResponse,
+    GetPlaylistItemsResponse,
+    GetPlaylistsResponse,
+    QueryParams,
+    QueryResponse,
+)
 
 
 class BeefwebClientBase:
@@ -37,8 +43,14 @@ class BeefwebClientBase:
             }
         )
         kwargs["headers"] = headers
-
-        params = kwargs.pop("params")
+        # handle boolean
+        params = kwargs.get("params", None)
+        if params and isinstance(params, Mapping):
+            params = {
+                k: (str(v).lower() if isinstance(v, bool) else v)
+                for k, v in params.items()
+            }
+            kwargs["params"] = params
         try:
             async with self._session.get(self._root / path, **kwargs) as resp:
                 if resp.status not in self._sse_ok_codes:
@@ -55,11 +67,7 @@ class BeefwebClientBase:
     ):
         async with self._session.request(method, self._root / path, **kwargs) as resp:
             resp.raise_for_status()
-            data = await resp.read()
-            try:
-                return json.loads(data) if data else None
-            except json.JSONDecodeError:
-                return data.decode("utf-8")
+            return await resp.read()
 
     async def _get(self, path: str, **kwargs: Unpack[aiohttp.client._RequestOptions]):
         return await self.__request("get", path, **kwargs)
@@ -69,4 +77,33 @@ class BeefwebClientBase:
 
 
 class BeefwebClient(BeefwebClientBase):
-    pass
+    async def get_player(self, columns: str):
+        return GetPlayerResponse.model_validate_json(
+            await self._get("player", params={"columns": columns})
+        )
+
+    async def query(self, **params: Unpack[QueryParams]):
+        return QueryResponse.model_validate_json(
+            await self._get("query", params=params),
+        )
+
+    async def query_updates(self, **params: Unpack[QueryParams]):
+        async for event in self._sse("query/updates", params=params):
+            if event.event == "message" and event.data:
+                yield QueryResponse.model_validate_json(event.data)
+
+    async def toggle_pause_state(self):
+        await self._post("player/pause/toggle")
+
+    async def get_playlists(self):
+        return GetPlaylistsResponse.model_validate_json(
+            await self._get("playlists"),
+        )
+
+    async def get_playlist_items(self, playlist_id: str, range: str, columns: str):
+        return GetPlaylistItemsResponse.model_validate_json(
+            await self._get(
+                (URL("playlists") / playlist_id / "items" / range).path,
+                params={"columns": columns},
+            )
+        )

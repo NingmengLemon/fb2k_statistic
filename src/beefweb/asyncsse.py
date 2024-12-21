@@ -1,5 +1,3 @@
-"""仿照 aiosseclient 弄了个自己习惯的"""
-
 from dataclasses import dataclass
 
 
