@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+import logging
 from typing import Unpack
 
 from yarl import URL
@@ -12,6 +13,8 @@ from .models import (
     QueryParams,
     QueryResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BeefwebClientBase:
@@ -32,6 +35,9 @@ class BeefwebClientBase:
         self._timeout = aiohttp.ClientTimeout(total=total_timeout)
         self._session = aiohttp.ClientSession(auth=self._auth, timeout=self._timeout)
         self._sse_ok_codes = [200, 301, 307]
+
+    async def close(self):
+        await self._session.close()
 
     async def _sse(self, path: str, **kwargs: Unpack[aiohttp.client._RequestOptions]):
         headers = kwargs.pop("headers", {})

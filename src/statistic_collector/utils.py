@@ -21,7 +21,7 @@ def handle_artist_field(
             )
             > 1
         ):
-            return result
+            return [r.strip() for r in result]
     # 都没有就算了
     return artist_field
 
@@ -79,7 +79,7 @@ def split_with_exclusions(
     # return parts
 
 
-def get_music_id(*fields):
+def calc_music_id(metadata: dict[str, str], *fields: str):
     return hashlib.sha256(
-        ("/".join(str(f) for f in fields)).encode("utf-8")
+        ("-".join(str(metadata[f]) for f in fields)).encode("utf-8")
     ).hexdigest()

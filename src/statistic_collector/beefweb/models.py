@@ -1,18 +1,10 @@
-from enum import Enum
-from typing import Any, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel
 
 
-class VolumeType(Enum):
-    DB = "db"
-    LINEAR = "linear"
-
-
-class PlaybackState(Enum):
-    STOPPED = "stopped"
-    PLAYING = "playing"
-    PAUSED = "paused"
+VolumeType = Literal["db", "linear"]
+PlaybackState = Literal["stopped", "playing", "paused"]
 
 
 class PlayerInfo(TypedDict):

@@ -169,4 +169,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-aiosseclient.py
+
+config.json
+fb2k_playback_statistic.db

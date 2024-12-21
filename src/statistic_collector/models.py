@@ -5,6 +5,11 @@ from sqlmodel import SQLModel, Field, Relationship
 
 
 class StatisticConfig(BaseModel):
+    #
+    api_root: str = "http://127.0.0.1:8880/api"
+    # 连接到 fb2k 的凭据
+    username: str | None = None
+    password: str | None = None
     # 数据库位置
     database_url: str = "sqlite:///~/fb2k_playback_statistic.db"
     # 用作计算音乐哈希的字段
@@ -12,7 +17,7 @@ class StatisticConfig(BaseModel):
     # 将这些艺术家视为整体，保证不被分割符切割
     preserved_artists: list[str] = ["Leo/need"]
     # 允许的元数据中的分割符
-    fb2k_artist_delimiters: list[str] = ["/"]
+    fb2k_artist_delimiters: list[str] = ["/", ","]
     # 数据库中的艺术家分割符
     database_artist_delimiter: str = "|"
     # 当播放进度超过多少时才会记录播放
