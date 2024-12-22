@@ -11,20 +11,19 @@ from src.statistic_collector import StatisticCollector, StatisticConfig
 LOCK_FILE = pathlib.Path(os.path.expanduser("~")).joinpath("fb2kstat.lock")
 lock = FileLock(LOCK_FILE, timeout=0)
 
-logging_config = {
-    "format": "%(asctime)s - %(levelname)s - %(message)s",
-    "datefmt": "%Y-%m-%d %H:%M:%S",
-    "level": logging.DEBUG if "--debug" in sys.argv else logging.INFO,
-}
-if "--logfile" in sys.argv:
-    logging_config["filename"] = "fb2kstat.log"
-    logging_config["filemode"] = "w+"
-    logging_config["encoding"] = "utf-8"
-
-logging.basicConfig(**logging_config)
-
 
 async def app():
+    logging_config = {
+        "format": "%(asctime)s - %(levelname)s - %(message)s",
+        "datefmt": "%Y-%m-%d %H:%M:%S",
+        "level": logging.DEBUG if "--debug" in sys.argv else logging.INFO,
+    }
+    if "--logfile" in sys.argv:
+        logging_config["filename"] = "fb2kstat.log"
+        logging_config["filemode"] = "w+"
+        logging_config["encoding"] = "utf-8"
+    logging.basicConfig(**logging_config)
+
     config_file = "config.json"
     if not os.path.exists(config_file):
         default = StatisticConfig()
