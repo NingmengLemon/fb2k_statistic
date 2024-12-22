@@ -1,12 +1,22 @@
 import asyncio
+import atexit
 import logging
 import os
 import sys
+import pathlib
 
 from src.statistic_collector import StatisticCollector, StatisticConfig
 
+LOCK_FILE = pathlib.Path(os.path.expanduser("~")).joinpath("fb2kstat.lock")
+
 
 async def main():
+    if LOCK_FILE.exists():
+        print("Already running")
+        print(f"If actually not running, remove `{LOCK_FILE!s}` and try again")
+        sys.exit(0)
+    LOCK_FILE.touch()
+    atexit.register(lambda: os.remove(LOCK_FILE))
     if "--debug" in sys.argv:
         logging.basicConfig(
             format="%(asctime)s - %(levelname)s - %(message)s",

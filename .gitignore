@@ -172,3 +172,4 @@ cython_debug/
 
 config.json
 fb2k_playback_statistic.db
+fb2kstat.lock
