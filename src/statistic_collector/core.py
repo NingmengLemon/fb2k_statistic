@@ -39,6 +39,7 @@ class PlayerState:
 class StatisticCollector:
     def __init__(self, config: StatisticConfig):
         self._config = config.model_copy(deep=True)
+        logger.debug("config = %s", self._config.model_dump_json())
         self._client = BeefwebClient(
             root=self._config.api_root,
             username=self._config.username,
@@ -105,7 +106,7 @@ class StatisticCollector:
                 )
             )
             sess.commit()
-            logger.info(
+            logger.debug(
                 "add new record, duration=%.3f, music_id=%s", duration, music_id
             )
 
@@ -125,7 +126,7 @@ class StatisticCollector:
                     )
                 )
                 sess.commit()
-                logger.info("add new music, metadata=%s", metadata)
+                logger.debug("add new music, metadata=%s", metadata)
 
     @property
     def _dbsess(self):
@@ -249,13 +250,14 @@ class StatisticCollector:
                         )
                         self._switch_state(self._player_to_state(player))
                 except aiohttp.ClientConnectionError as e:
-                    logger.warning("Exception when collecting: %s", e)
+                    logger.warning("exception when collecting: %s", e)
                 self._switch_state(None)
                 logger.info(f"retry after {self._config.retry_interval}s")
                 await asyncio.sleep(self._config.retry_interval)
         finally:
             await self.close()
             self._flush_buffer()
+            logger.info("stop collecting")
 
     async def close(self):
         await self._client.close()

@@ -1,29 +1,25 @@
 import asyncio
-import atexit
 import logging
 import os
 import sys
-import pathlib
 
 from src.statistic_collector import StatisticCollector, StatisticConfig
 
-LOCK_FILE = pathlib.Path(os.path.expanduser("~")).joinpath("fb2kstat.lock")
+
+logging_config = {
+    "format": "%(asctime)s - %(levelname)s - %(message)s",
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+    "level": logging.DEBUG if "--debug" in sys.argv else logging.INFO,
+}
+if "--logfile" in sys.argv:
+    logging_config["filename"] = "fb2kstat.log"
+    logging_config["filemode"] = "w+"
+    logging_config["encoding"] = "utf-8"
+
+logging.basicConfig(**logging_config)
 
 
 async def main():
-    if LOCK_FILE.exists():
-        print("Already running")
-        print(f"If actually not running, remove `{LOCK_FILE!s}` and try again")
-        sys.exit(0)
-    LOCK_FILE.touch()
-    atexit.register(lambda: os.remove(LOCK_FILE))
-    if "--debug" in sys.argv:
-        logging.basicConfig(
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            level=logging.DEBUG,
-        )
-
     config_file = "config.json"
     if not os.path.exists(config_file):
         default = StatisticConfig()

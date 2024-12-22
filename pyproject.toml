@@ -3,18 +3,24 @@ name = "fb2k_statistic"
 version = "0.1.0"
 description = "Default template for PDM package"
 authors = [
-    {name = "NingmengLemon", email = "60469383+NingmengLemon@users.noreply.github.com"},
+    { name = "NingmengLemon", email = "60469383+NingmengLemon@users.noreply.github.com" },
 ]
-dependencies = ["aiohttp>=3.11.11", "yarl>=1.18.3", "sqlmodel>=0.0.22", "pydantic>=2.10.4"]
+dependencies = [
+    "aiohttp>=3.11.11",
+    "yarl>=1.18.3",
+    "sqlmodel>=0.0.22",
+    "pydantic>=2.10.4",
+]
 requires-python = "==3.12.*"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 
 [tool.pdm]
 distribution = false
 
+[tool.pdm.scripts]
+app = { cmd = ["python", "app.py"] }
+
 [dependency-groups]
-dev = [
-    "ipykernel>=6.29.5",
-]
+dev = ["ipykernel>=6.29.5", "pyinstaller>=6.11.1"]
