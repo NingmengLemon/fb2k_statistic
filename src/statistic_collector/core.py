@@ -68,6 +68,13 @@ class StatisticCollector:
         last_state = self._buffer[0]
         init_time = last_state.time
         now_time = time.time()
+        stateflow = ", ".join(
+            [
+                f"{s.playback_state}_{s.position:.2f}/{s.time-init_time:.2f}"
+                for s in self._buffer
+            ]
+        )
+        logger.debug("stateflow=%s", stateflow)
 
         duration = now_time - init_time
         # 总之先把总时长算出来，然后把暂停的时间减掉
@@ -180,6 +187,7 @@ class StatisticCollector:
 
         同时进行一些必要的标准化处理
         """
+        now_time = time.time()
         columns = player["activeItem"]["columns"]
         if len(columns) == len(self._query_columns):
             metadata = {
@@ -208,7 +216,7 @@ class StatisticCollector:
             position=player["activeItem"]["position"],
             duration=player["activeItem"]["duration"],
             metadata=metadata,
-            time=time.time(),
+            time=now_time,
             volume_percent=(
                 0.0
                 if volume["isMuted"]

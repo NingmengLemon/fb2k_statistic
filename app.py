@@ -2,17 +2,15 @@ import asyncio
 import logging
 import os
 import sys
-import pathlib
 
 from filelock import FileLock, Timeout
 
 from src.statistic_collector import StatisticCollector, StatisticConfig
 
-LOCK_FILE = pathlib.Path(os.path.expanduser("~")).joinpath("fb2kstat.lock")
-lock = FileLock(LOCK_FILE, timeout=0)
+logger = logging.getLogger(__name__)
 
 
-async def app():
+async def main():
     logging_config = {
         "format": "%(asctime)s - %(levelname)s - %(message)s",
         "datefmt": "%Y-%m-%d %H:%M:%S",
@@ -29,22 +27,19 @@ async def app():
         default = StatisticConfig()
         with open(config_file, "w+", encoding="utf-8") as fp:
             fp.write(default.model_dump_json(indent=4))
-        print("Edit config.json and launch app again")
+        print("Edit config.json and relaunch app")
         sys.exit(0)
 
     with open(config_file, "r", encoding="utf-8") as fp:
         config = StatisticConfig.model_validate_json(fp.read())
-
-    collector = StatisticCollector(config)
-    await collector.collect_forever()
-
-
-async def main():
+    dblockfile = config.database_url.removeprefix("sqlite:///") + ".lock"
+    dblock = FileLock(dblockfile, timeout=0)
     try:
-        with lock:
-            await app()
+        with dblock:
+            collector = StatisticCollector(config)
+            await collector.collect_forever()
     except Timeout:
-        print("Already running, plz wait")
+        logger.critical("database busy")
 
 
 asyncio.run(main())

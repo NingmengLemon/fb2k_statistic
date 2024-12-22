@@ -1,7 +1,5 @@
-import posixpath
 import uuid
 from pydantic import BaseModel
-from pydantic import Field as PydField
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -12,10 +10,8 @@ class StatisticConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     # 数据库位置
-    database_url: str = PydField(
-        "sqlite:///"
-        + posixpath.join(posixpath.expanduser("~"), "fb2k_playback_statistic.db")
-    )
+    database_url: str = "sqlite:///fb2k_playback_statistic.db"
+    
     # 用作计算音乐文件哈希的字段们，顺序敏感
     columns_as_id: list[str] = [r"%title%", r"%artist%"]  # , r"%album%"]
     # 将这些艺术家视为整体，保证不被分割符切割
