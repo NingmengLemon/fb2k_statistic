@@ -5,7 +5,7 @@ import logging
 import time
 
 import aiohttp
-from sqlmodel import create_engine, SQLModel
+from sqlmodel import create_engine, SQLModel, Session, select
 
 from .beefweb import BeefwebClient
 from .beefweb.models import PlaybackState, PlayerStateInfo
@@ -25,11 +25,12 @@ _VOID_FIELD = "?"
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class PlayerState:
     playback_state: PlaybackState
     position: float
     duration: float
+    music_id: str | None
     metadata: dict[str, str] | None
     time: float
     volume_percent: float
@@ -56,46 +57,107 @@ class StatisticCollector:
 
         self._last_state: PlayerState | None = None
         # 用于当前曲目的状态缓冲，切歌/停止/断连时整理写入到数据库并清空
-        self._buffer = []  # 数据结构还没想好
+        self._buffer: list[PlayerState] = []
 
-    def _write_record(self):
-        """写入数据库清空缓冲区的函数
+    def _flush_buffer(self):
+        """写入数据库清空缓冲区的函数"""
+        self._buffer = [s for s in self._buffer if s.playback_state != "stopped"]
+        if not self._buffer:
+            return
+        last_state = self._buffer[0]
+        init_time = last_state.time
+        now_time = time.time()
 
-        大致想法：
-        当前时间和缓冲区末尾状态的时间做差得到实际时间
-        然后进度条位置也做个差？
-        超过记录阈值就录入，播放时间和实际时间差太多的按实际时间计
-        或许需要遍历，不能简单首尾做差ww
-        """
-        # TODO: 变更状态时的状态整理和数据库操作
-        raise NotImplementedError()
+        duration = 0
+        for i, state in enumerate(self._buffer):
+            if i == 0:
+                continue
+            if (state.time - last_state.time + self._config.max_tolerant_delay) > (
+                d := (state.position - last_state.position)
+            ) > 0 and last_state.playback_state == "playing":
+                duration += d
+            last_state = state
+
+        if (
+            (now_time - last_state.time + self._config.max_tolerant_delay)
+            > (d := (last_state.duration - last_state.position))
+            > 0
+        ):
+            duration += d
+        self._add_music(
+            last_state.music_id, last_state.metadata, duration=last_state.duration
+        )
+        if (
+            now_time - init_time + self._config.max_tolerant_delay >= duration
+            and duration / last_state.duration >= self._config.record_threshold
+        ):
+            self._add_record(last_state.music_id, init_time, duration)
+        self._buffer.clear()
+        logger.info("buffer flushed")
+
+    def _add_record(self, music_id: str, start_time: float, duration: float):
+        with self._dbsess as sess:
+            sess.add(
+                PlaybackRecord(
+                    music_id=music_id,
+                    time=start_time,
+                    duration=duration,
+                )
+            )
+            sess.commit()
+            logger.info(
+                "add new record, duration=%.3f, music_id=%s", duration, music_id
+            )
+
+    def _add_music(self, music_id: str, metadata: dict[str, str], duration: float):
+        with self._dbsess as sess:
+            item = sess.exec(
+                select(MusicItem).where(MusicItem.id == music_id)
+            ).one_or_none()
+            if item is None:
+                sess.add(
+                    MusicItem(
+                        id=music_id,
+                        title=metadata["%title%"],
+                        artists=metadata.get("%artist%", ""),
+                        album=metadata.get("%album%"),
+                        duration=duration,
+                    )
+                )
+                sess.commit()
+                logger.info("add new music, metadata=%s", metadata)
+
+    @property
+    def _dbsess(self):
+        return Session(self._engine)
 
     # pylint: disable=W1202, W1203
     def _compare(self, old: PlayerState | None, new: PlayerState | None):
         # None 表示断连状态
-        # 总之先打印试试看
         # 总之往缓冲区里狠狠鸿儒(bs)
         match (old, new):
             case (None, None):
                 return
             case (None, _):
                 logger.info("connected")
+                self._buffer.append(new)
                 return
             case (_, None):
                 logger.info("disconnected")
+                self._flush_buffer()
                 return
             case (x, y) if x.metadata is None and y.metadata is None:
                 return
             case (_, y) if y.metadata is None:
                 logger.info("stop")
+                self._flush_buffer()
                 return
             case (x, _) if x.metadata is None:
                 logger.info(f"start {new.metadata["%title%"]!r}")
+                self._buffer.append(new)
                 return
 
-        old_id = calc_music_id(old.metadata, *self._columns_as_id)
-        new_id = calc_music_id(new.metadata, *self._columns_as_id)
-        if old_id == new_id:
+        if old.music_id == new.music_id:
             match (old.playback_state, new.playback_state):
                 case ("paused", "playing"):
                     logger.info("resume")
@@ -110,15 +172,17 @@ class StatisticCollector:
                         logger.info(
                             f"volume {old.volume_percent:.2f}% -> {new.volume_percent:.2f}%"
                         )
-
         else:
             logger.info(
                 f"switch {old.metadata["%title%"]!r} -> {new.metadata["%title%"]!r}"
             )
+            self._flush_buffer()
+        self._buffer.append(new)
 
     def _switch_state(self, new_state: PlayerState | None):
         """传入None时表示连接断开"""
         self._compare(self._last_state, new_state)
+        logger.debug("current buffer: %s", self._buffer)
         self._last_state = new_state
 
     def _player_to_state(self, player: PlayerStateInfo):
@@ -130,8 +194,7 @@ class StatisticCollector:
         columns = player["activeItem"]["columns"]
         if len(columns) == len(self._query_columns):
             metadata = {
-                k: (None if v == "?" else v)
-                for k, v in zip(self._query_columns, columns)
+                k: v for k, v in zip(self._query_columns, columns) if v != _VOID_FIELD
             }
             raw_artists = metadata.get("%artist%", None)
             if raw_artists:
@@ -143,10 +206,11 @@ class StatisticCollector:
             else:
                 artists = []
             metadata["%artist%"] = self._config.database_artist_delimiter.join(artists)
+            music_id = calc_music_id(metadata, *self._query_columns)
             logger.debug("extract metadata: %s", metadata)
         else:
             # 长度不匹配说明现在是停止状态，没有元数据
-            metadata = None
+            metadata = music_id = None
             logger.debug("stopped state, no metadata")
 
         volume = player["volume"]
@@ -165,6 +229,7 @@ class StatisticCollector:
                     * 100
                 )
             ),
+            music_id=music_id,
         )
 
     @lock()
@@ -190,6 +255,7 @@ class StatisticCollector:
                 await asyncio.sleep(self._config.retry_interval)
         finally:
             await self.close()
+            self._flush_buffer()
 
     async def close(self):
         await self._client.close()

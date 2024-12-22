@@ -1,6 +1,7 @@
-import time
+import posixpath
 import uuid
 from pydantic import BaseModel
+from pydantic import Field as PydField
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -11,9 +12,12 @@ class StatisticConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     # 数据库位置
-    database_url: str = "sqlite:///fb2k_playback_statistic.db"
+    database_url: str = PydField(
+        "sqlite:///"
+        + posixpath.join(posixpath.expanduser("~"), "fb2k_playback_statistic.db")
+    )
     # 用作计算音乐文件哈希的字段们，顺序敏感
-    columns_as_id: list[str] = [r"%title%", r"%artist%", r"album"]
+    columns_as_id: list[str] = [r"%title%", r"%artist%"]  # , r"%album%"]
     # 将这些艺术家视为整体，保证不被分割符切割
     preserved_artists: list[str] = ["Leo/need"]
     # 允许的元数据中的分割符
@@ -44,5 +48,5 @@ class PlaybackRecord(SQLModel, table=True):
     music_id: str = Field(foreign_key="musicitem.id")
     music: MusicItem = Relationship(back_populates="records")
 
-    time: float = Field(default_factory=time.time)
-    played_duration: float
+    time: float  # 开始听的时间戳
+    duration: float  # 听的时长，不一定等于歌曲时长
