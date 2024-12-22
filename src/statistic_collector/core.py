@@ -5,7 +5,7 @@ import logging
 import time
 
 import aiohttp
-from sqlmodel import create_engine, SQLModel, Session, select
+from sqlmodel import create_engine, SQLModel, Session
 
 from .beefweb import BeefwebClient
 from .beefweb.models import PlaybackState, PlayerStateInfo
@@ -112,9 +112,7 @@ class StatisticCollector:
 
     def _add_music(self, music_id: str, metadata: dict[str, str], duration: float):
         with self._dbsess as sess:
-            item = sess.exec(
-                select(MusicItem).where(MusicItem.id == music_id)
-            ).one_or_none()
+            item = sess.get(MusicItem, music_id)
             if item is None:
                 sess.add(
                     MusicItem(
@@ -252,7 +250,7 @@ class StatisticCollector:
                 except aiohttp.ClientConnectionError as e:
                     logger.warning("exception when collecting: %s", e)
                 self._switch_state(None)
-                logger.info(f"retry after {self._config.retry_interval}s")
+                logger.debug(f"retry after {self._config.retry_interval}s")
                 await asyncio.sleep(self._config.retry_interval)
         finally:
             await self.close()

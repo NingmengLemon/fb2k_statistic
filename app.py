@@ -2,9 +2,14 @@ import asyncio
 import logging
 import os
 import sys
+import pathlib
+
+from filelock import FileLock, Timeout
 
 from src.statistic_collector import StatisticCollector, StatisticConfig
 
+LOCK_FILE = pathlib.Path(os.path.expanduser("~")).joinpath("fb2kstat.lock")
+lock = FileLock(LOCK_FILE, timeout=0)
 
 logging_config = {
     "format": "%(asctime)s - %(levelname)s - %(message)s",
@@ -19,7 +24,7 @@ if "--logfile" in sys.argv:
 logging.basicConfig(**logging_config)
 
 
-async def main():
+async def app():
     config_file = "config.json"
     if not os.path.exists(config_file):
         default = StatisticConfig()
@@ -33,6 +38,14 @@ async def main():
 
     collector = StatisticCollector(config)
     await collector.collect_forever()
+
+
+async def main():
+    try:
+        with lock:
+            await app()
+    except Timeout:
+        print("Already running, plz wait")
 
 
 asyncio.run(main())
