@@ -26,12 +26,9 @@ class StatisticConfig(BaseModel):
     # 数据库中的艺术家分割符
     database_artist_delimiter: str = "|"
     # 当播放进度超过多少时才会记录播放
-    record_threshold: float = Field(0.1, ge=0.0, le=1.0)
+    record_threshold: float = Field(0.25, ge=0.0, le=1.0)
     # 重试间隔
     retry_interval: float = Field(2.0, ge=0.0)
-    # 最大能容忍的延迟造成的误差
-    # 计划用于进度防作弊
-    max_tolerant_delay: float = Field(5.0, ge=0.0)
 
 
 class MusicItem(SQLModel, table=True):

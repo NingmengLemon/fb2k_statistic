@@ -69,32 +69,24 @@ class StatisticCollector:
         init_time = last_state.time
         now_time = time.time()
 
-        duration = 0
+        duration = now_time - init_time
+        # 总之先把总时长算出来，然后把暂停的时间减掉
+        # 单靠 position 有点缺失，还得是时间戳
         for i, state in enumerate(self._buffer):
             if i == 0:
                 continue
-            if (state.time - last_state.time + self._config.max_tolerant_delay) > (
-                d := (state.position - last_state.position)
-            ) > 0 and last_state.playback_state == "playing":
-                duration += d
+            if last_state.playback_state == "paused":
+                duration -= state.time - last_state.time
             last_state = state
-
-        if (
-            (now_time - last_state.time + self._config.max_tolerant_delay)
-            > (d := (last_state.duration - last_state.position))
-            > 0
-        ):
-            duration += d
+        if last_state.playback_state == "paused":
+            duration -= now_time - last_state.time
         self._add_music(
             last_state.music_id, last_state.metadata, duration=last_state.duration
         )
-        if (
-            now_time - init_time + self._config.max_tolerant_delay >= duration
-            and duration / last_state.duration >= self._config.record_threshold
-        ):
+        if duration / last_state.duration >= self._config.record_threshold:
             self._add_record(last_state.music_id, init_time, duration)
         self._buffer.clear()
-        logger.info("buffer flushed")
+        logger.debug("buffer flushed")
 
     def _add_record(self, music_id: str, start_time: float, duration: float):
         with self._dbsess as sess:
@@ -106,9 +98,7 @@ class StatisticCollector:
                 )
             )
             sess.commit()
-            logger.debug(
-                "add new record, duration=%.3f, music_id=%s", duration, music_id
-            )
+            logger.info("add new record, duration=%.3f", duration)
 
     def _add_music(self, music_id: str, metadata: dict[str, str], duration: float):
         with self._dbsess as sess:
