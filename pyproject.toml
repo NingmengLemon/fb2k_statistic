@@ -24,4 +24,7 @@ distribution = false
 app = { cmd = ["python", "app.py"] }
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5", "pyinstaller>=6.11.1"]
+dev = [
+    "ipykernel>=6.29.5",
+    "pyinstaller>=6.11.1",
+]

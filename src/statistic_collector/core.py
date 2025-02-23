@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 import json
 import logging
+import sys
 import time
 
 import aiohttp
@@ -47,7 +48,7 @@ class StatisticCollector:
         )
 
         dburl = self._config.database_url
-        self._engine = create_engine(dburl)
+        self._engine = create_engine(dburl, echo="--debug" in sys.argv)
         SQLModel.metadata.create_all(bind=self._engine, tables=_TABLES_TO_CREATE)
 
         self._columns_as_id = [c.lower().strip() for c in self._config.columns_as_id]
@@ -61,7 +62,10 @@ class StatisticCollector:
         self._buffer: list[PlayerState] = []
 
     def _flush_buffer(self):
-        """写入数据库清空缓冲区的函数"""
+        """
+        写入数据库清空缓冲区的函数
+        在切歌/停止/断开连接时被调用 即被调用时其中的记录会是同一首歌的
+        """
         self._buffer = [s for s in self._buffer if s.playback_state != "stopped"]
         if not self._buffer:
             return
@@ -90,8 +94,7 @@ class StatisticCollector:
         self._add_music(
             last_state.music_id, last_state.metadata, duration=last_state.duration
         )
-        if duration / last_state.duration >= self._config.record_threshold:
-            self._add_record(last_state.music_id, init_time, duration)
+        self._add_record(last_state.music_id, init_time, duration)
         self._buffer.clear()
         logger.debug("buffer flushed")
 
@@ -159,6 +162,10 @@ class StatisticCollector:
                     logger.info("resume")
                 case ("playing", "paused"):
                     logger.info("pause")
+                    self._buffer.append(new)
+                    self._flush_buffer()
+                    # 以防在同一首歌停太久导致神秘的记录
+                    return
                 case ("playing", "playing"):
                     if old.volume_percent == new.volume_percent:
                         logger.info(

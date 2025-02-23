@@ -176,3 +176,4 @@ fb2kstat.lock
 *.exe
 *.cmd
 *.db.lock
+/*.dist/

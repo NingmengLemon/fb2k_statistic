@@ -11,7 +11,7 @@ class StatisticConfig(BaseModel):
     password: str | None = None
     # 数据库位置
     database_url: str = "sqlite:///fb2k_playback_statistic.db"
-    
+
     # 用作计算音乐文件哈希的字段们，顺序敏感
     columns_as_id: list[str] = [r"%title%", r"%artist%"]  # , r"%album%"]
     # 将这些艺术家视为整体，保证不被分割符切割
@@ -21,8 +21,6 @@ class StatisticConfig(BaseModel):
     fb2k_artist_delimiters: list[str] = ["/", ","]
     # 数据库中的艺术家分割符
     database_artist_delimiter: str = "|"
-    # 当播放进度超过多少时才会记录播放
-    record_threshold: float = Field(0.25, ge=0.0, le=1.0)
     # 重试间隔
     retry_interval: float = Field(2.0, ge=0.0)
 
@@ -32,7 +30,7 @@ class MusicItem(SQLModel, table=True):
     title: str
     artists: str = ""
     album: str | None = None
-    duration: float = ""
+    duration: float
     records: list["PlaybackRecord"] = Relationship(back_populates="music")
 
 
