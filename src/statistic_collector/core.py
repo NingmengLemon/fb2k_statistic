@@ -49,7 +49,9 @@ class StatisticCollector:
 
         dburl = self._config.database_url
         self._engine = create_engine(dburl, echo="--debug" in sys.argv)
-        SQLModel.metadata.create_all(bind=self._engine, tables=_TABLES_TO_CREATE)
+        SQLModel.metadata.create_all(
+            bind=self._engine, tables=_TABLES_TO_CREATE, checkfirst=True
+        )
 
         self._columns_as_id = [c.lower().strip() for c in self._config.columns_as_id]
         self._query_columns = self._columns_as_id.copy()
@@ -64,7 +66,9 @@ class StatisticCollector:
     def _flush_buffer(self):
         """
         写入数据库清空缓冲区的函数
-        在切歌/停止/断开连接时被调用 即被调用时其中的记录会是同一首歌的
+        在切歌/停止/断开连接/暂停时被调用 即被调用时其中的记录一定会是同一首歌的同一次播放
+
+        因为如果写成异步大概是异步不安全的所以干脆写成同步x
         """
         self._buffer = [s for s in self._buffer if s.playback_state != "stopped"]
         if not self._buffer:
@@ -91,40 +95,36 @@ class StatisticCollector:
             last_state = state
         if last_state.playback_state == "paused":
             duration -= now_time - last_state.time
-        self._add_music(
-            last_state.music_id, last_state.metadata, duration=last_state.duration
-        )
-        self._add_record(last_state.music_id, init_time, duration)
+        with self._dbsess as session:
+            self._add_music(session, last_state.music_id, last_state.metadata, duration)
+            self._add_record(session, last_state.music_id, init_time, duration=duration)
+            session.commit()
         self._buffer.clear()
         logger.debug("buffer flushed")
 
-    def _add_record(self, music_id: str, start_time: float, duration: float):
-        with self._dbsess as sess:
-            sess.add(
-                PlaybackRecord(
-                    music_id=music_id,
-                    time=start_time,
+    def _add_record(
+        self, session: Session, music_id: str, start_time: float, duration: float
+    ):
+        session.add(
+            PlaybackRecord(music_id=music_id, time=start_time, duration=duration)
+        )
+        logger.info("add new record, duration=%.3f", duration)
+
+    def _add_music(
+        self, session: Session, music_id: str, metadata: dict[str, str], duration: float
+    ):
+        item = session.get(MusicItem, music_id)
+        if item is None:
+            session.add(
+                MusicItem(
+                    id=music_id,
+                    title=metadata["%title%"],
+                    artists=metadata.get("%artist%", ""),
+                    album=metadata.get("%album%"),
                     duration=duration,
                 )
             )
-            sess.commit()
-            logger.info("add new record, duration=%.3f", duration)
-
-    def _add_music(self, music_id: str, metadata: dict[str, str], duration: float):
-        with self._dbsess as sess:
-            item = sess.get(MusicItem, music_id)
-            if item is None:
-                sess.add(
-                    MusicItem(
-                        id=music_id,
-                        title=metadata["%title%"],
-                        artists=metadata.get("%artist%", ""),
-                        album=metadata.get("%album%"),
-                        duration=duration,
-                    )
-                )
-                sess.commit()
-                logger.debug("add new music, metadata=%s", metadata)
+            logger.debug("add new music, metadata=%s", metadata)
 
     @property
     def _dbsess(self):
@@ -133,7 +133,7 @@ class StatisticCollector:
     # pylint: disable=W1202, W1203
     def _compare(self, old: PlayerState | None, new: PlayerState | None):
         # None 表示断连状态
-        # 总之往缓冲区里狠狠鸿儒(bs)
+        # 总之往缓冲区里狠狠写就是了x
         match (old, new):
             case (None, None):
                 return
@@ -249,7 +249,8 @@ class StatisticCollector:
                         if player is None:
                             continue
                         logger.debug(
-                            "receive sse: %s", json.dumps(player, ensure_ascii=False)
+                            "receive sse report, data=%s",
+                            json.dumps(player, ensure_ascii=False, indent=2),
                         )
                         self._switch_state(self._player_to_state(player))
                 except aiohttp.ClientConnectionError as e:
