@@ -171,12 +171,10 @@ cython_debug/
 .pypirc
 
 config.json
-fb2k_playback_statistic.db
-fb2kstat.lock
 *.exe
 *.cmd
-*.db.lock
 /*.dist/
 *.build
 *.onefile-build
 *.db
+*.lock

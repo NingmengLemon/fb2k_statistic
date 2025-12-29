@@ -25,4 +25,8 @@ app = { cmd = ["python", "app.py"] }
 build = { cmd = ["pyinstaller", "-F", "./app.py", "-w"] }
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5", "pyinstaller>=6.11.1"]
+dev = [
+    "ipykernel>=6.29.5",
+    "mypy>=1.19.1",
+    "pyinstaller>=6.11.1",
+]
