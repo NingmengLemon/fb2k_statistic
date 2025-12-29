@@ -177,3 +177,6 @@ fb2kstat.lock
 *.cmd
 *.db.lock
 /*.dist/
+*.build
+*.onefile-build
+*.db
